@@ -1,5 +1,6 @@
 const std = @import("std");
 
+// triev as in retrieval. much better alternative to the ambiguous trie imo.
 const Triev = struct { nodes: []Node };
 const Node = struct { bit_string: u32 = 0, nodes: []*Node };
 
@@ -18,4 +19,40 @@ pub fn main() anyerror!void {
     var args = [_:null]?[*:0]const u8{ "echo", "yo", "dawg", "i heard" };
     //const envp = [0:null]?[*:0]const u8{};
     return std.os.execvpeZ(args[0].?, &args, &[0:null]?[*:0]const u8{});
+}
+
+const TrievError = error{
+    InvalidKeyByte, //key must only be made of A-Za-Z_
+    KeyTooLong,
+};
+const max_key_len = 256;
+
+// squishes A-Za-z_ ranging 0x41-0x7A (64 bits) into 0x01-0x1F (32 bits)
+fn compress_key(key: []u8) TrievError!void {
+    if (key.len > max_key_len)
+        return TrievError.KeyTooLong;
+    for (key) |char, i| {
+        if (char == '_' or (char >= 'A' and char <= 'Z') or (char >= 'a' and char <= 'z')) {
+            key[i] &= 0x1F;
+        } else {
+            return TrievError.InvalidKeyByte;
+        }
+    }
+}
+
+const expect = std.testing.expect;
+
+test "compress" {
+    var automatic = [_]u8{ 'C', 'h', 'a', 'r', 'l', 'i', 'e', '_', 'D', 'a', 'i', 's', 'y' };
+    const manual = [_]u8{ 0x03, 0x08, 0x01, 0x12, 0x0C, 0x09, 0x05, 0x1F, 0x04, 0x01, 0x09, 0x13, 0x19 };
+    compress_key(&automatic) catch unreachable;
+    for (automatic) |char, i| {
+        try expect(char == manual[i]);
+    }
+    var bad_key = [_]u8{ 0x00, 0x07, 0x15 };
+    compress_key(&bad_key) catch |err|
+        try expect(err == TrievError.InvalidKeyByte);
+    var long_key = [_]u8{ 0x5A, 0x69, 0x67 } ** 100;
+    compress_key(&long_key) catch |err|
+        try expect(err == TrievError.KeyTooLong);
 }
