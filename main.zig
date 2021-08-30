@@ -41,7 +41,7 @@ fn compress_key(key: []u8) TrievError!void {
 const expect = std.testing.expect;
 
 test "compress" {
-    var automatic = [_]u8{ 'C', 'h', 'a', 'r', 'l', 'i', 'e', '_', 'D', 'a', 'i', 's', 'y' };
+    var automatic: [13]u8 = "Charlie_Daisy".*;
     const manual = [_]u8{ 0x03, 0x08, 0x01, 0x12, 0x0C, 0x09, 0x05, 0x1F, 0x04, 0x01, 0x09, 0x13, 0x19 };
     compress_key(&automatic) catch unreachable;
     for (automatic) |char, i| {
