@@ -1,20 +1,18 @@
 const std = @import("std");
 
 // triev as in retrieval. much better alternative to the ambiguous trie imo.
-const Triev = struct { nodes: []Node };
-const Node = struct { bit_string: u32 = 0, nodes: []*Node };
+const Triev = struct { bit_string: u32 = 0, kids: []*Triev };
 
 pub fn main() anyerror!void {
-    var empty_arr = [0]*Node{};
+    var empty_arr = [0]*Triev{};
     comptime var i = 0;
-    var nodes: [32]Node = undefined;
-    inline while (i < nodes.len) : (i += 1) {
-        nodes[i].bit_string = 0;
-        nodes[i].nodes = empty_arr[0..];
+    var kids: [32]*Triev = undefined;
+    inline while (i < kids.len) : (i += 1) {
+        kids[i] = &Triev{ .bit_string = i * i, .kids = empty_arr[0..] };
     }
-    const triev = Triev{ .nodes = nodes[0..] };
-    for (triev.nodes) |node, node_num| {
-        std.debug.print("{} {} {any}\n", .{ node_num, node.bit_string, node.nodes });
+    const triev = Triev{ .bit_string = 0xFFFF_FFFF, .kids = kids[0..] };
+    for (triev.kids) |kid| {
+        std.debug.print("{} {any}\n", .{ kid.bit_string, kid.kids });
     }
     var args = [_:null]?[*:0]const u8{ "echo", "yo", "dawg", "i heard" };
     //const envp = [0:null]?[*:0]const u8{};
