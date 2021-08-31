@@ -6,15 +6,15 @@ pub fn main() anyerror!void {
     comptime var i = 0;
     var kids: [32]*Triev = undefined;
     inline while (i < kids.len) : (i += 1) {
-        kids[i] = &Triev{ .bit_string = 0, .kids = empty_arr[0..], .val = kid_msg[0..] };
+        kids[i] = &Triev{ .depth = 1, .bit_string = 0, .kids = empty_arr[0..], .val = kid_msg[0..] };
     }
     var grandkids: [1]*Triev = undefined;
     var grandkid_msg: [16]u8 = "a wee little bab".*;
-    grandkids[0] = &Triev{ .bit_string = 23, .kids = empty_arr[0..], .val = grandkid_msg[0..] };
+    grandkids[0] = &Triev{ .depth = 2, .bit_string = 23, .kids = empty_arr[0..], .val = grandkid_msg[0..] };
     kids[5].bit_string = 0x0000_0200;
     kids[5].kids = grandkids[0..];
     var root_msg: [36]u8 = "all your permission are belong to us".*;
-    var root = Triev{ .bit_string = 0xFFFFFFFF, .kids = kids[0..], .val = root_msg[0..] };
+    var root = Triev{ .depth = 0, .bit_string = 0xFFFFFFFF, .kids = kids[0..], .val = root_msg[0..] };
     std.debug.print("{} {s}\n", .{ root.bit_string, root.val });
     for (root.kids) |kid| {
         std.debug.print("{} {s}\n", .{ kid.bit_string, kid.val });
@@ -29,17 +29,18 @@ pub fn main() anyerror!void {
 
 // triev as in retrieval. much better alternative to the ambiguous trie imo.
 const Triev = struct {
+    depth: u8,
     bit_string: u32 = 0,
     kids: []*Triev,
     val: []u8,
-    // get subtriev at key position. if subtriev doesn't exist, return null
-    fn get(self: *Triev, key: []u8) TrievError!?*Triev {
+    // walk toward key and return pointer to furthest triev reached
+    fn get(self: *Triev, key: []u8) TrievError!*Triev {
         var cur = self;
         var i: u8 = 0;
         while (i < key.len) : (i += 1) {
             std.debug.print("{s}\n", .{cur.val});
-            if (cur.kids.len == 0)
-                return null;
+            if (cur.bit_string == 0)
+                break;
             const k = try compress_key(key[i]);
             std.debug.print("{s} {}\n", .{ "looking for", k });
             const bit_flag = @as(u32, 1) << k;
@@ -56,7 +57,7 @@ const Triev = struct {
                 std.debug.print("{s} {}\n", .{ "HAMMMMMM", index });
             } else {
                 std.debug.print("{s}\n", .{"i don't see nothin'"});
-                return null;
+                break;
             }
         }
         return cur;
@@ -65,6 +66,7 @@ const Triev = struct {
 
 const TrievError = error{
     InvalidKeyByte, //key must only be made of A-Za-Z_
+    KeyTooLong,
 };
 
 // squishes A-Za-z_ ranging 0x41-0x7A (64 bits) into 0x01-0x1F (32 bits)
@@ -90,8 +92,9 @@ test "compress" {
     var automatic: [13]u8 = "Charlie_Daisy".*;
     const manual = [_]u5{ 0x03, 0x08, 0x01, 0x12, 0x0C, 0x09, 0x05, 0x1F, 0x04, 0x01, 0x09, 0x13, 0x19 };
     for (automatic) |char, i| {
-        try expect(compress_key(automatic(char)) == manual[i]);
+        const c = try compress_key(char);
+        try expect(c == manual[i]);
     }
-    compress_key(0x15) catch |err|
+    _ = compress_key(0x15) catch |err|
         try expect(err == TrievError.InvalidKeyByte);
 }
