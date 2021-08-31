@@ -46,7 +46,10 @@ pub fn main() anyerror!void {
     std.debug.print("\n", .{});
     if (t.depth != key.len)
         try t.insert(key[t.depth..], val[0..], a);
+    try root.remove(key[0..]);
+    std.debug.print("\n", .{});
     _ = try root.get(key[0..]);
+    std.debug.print("\n", .{});
 
     var args = [_:null]?[*:0]const u8{ "echo", "yo", "dawg", "i heard" };
     //const envp = [0:null]?[*:0]const u8{};
@@ -115,6 +118,13 @@ const Triev = struct {
             trievs[i].kids = empty_arr[0..];
             trievs[i].val = val;
         }
+    }
+
+    // set val of Triev at key to empty string slice if such a Triev exists
+    fn remove(self: *Triev, key: []u8) TrievError!void {
+        const t = try self.get(key);
+        if (t.depth == key.len)
+            t.val = empty_str[0..];
     }
 };
 
