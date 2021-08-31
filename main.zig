@@ -1,12 +1,15 @@
 const std = @import("std");
-const allocator = std.mem.Allocator;
+const Allocator = std.mem.Allocator;
+
+var empty_arr = [0]*Triev{};
+var empty_str = [0]u8{};
 
 pub fn main() anyerror!void {
     var buf: [2048]u8 = undefined;
-    var a = &std.heap.FixedBufferAllocator.init(buf[0..]).allocator;
+    var b = std.heap.FixedBufferAllocator.init(buf[0..]);
+    var a = &b.allocator;
     std.debug.print("{}\n", .{@sizeOf(Triev)});
 
-    var empty_arr = [0]*Triev{};
     var root_msg: [36]u8 = "all your permission are belong to us".*;
     var kid_msg: [25]u8 = "just some snot-nosed brat".*;
     var grandkid_msg: [16]u8 = "a wee little bab".*;
@@ -35,12 +38,14 @@ pub fn main() anyerror!void {
     kids[5].bit_string = 0x0000_0200;
     kids[5].kids = try a.alloc(*Triev, 1);
     kids[5].kids[0] = grandkid;
+    std.debug.print("{}\n", .{b.end_index});
 
-    std.debug.print("{} {s}\n", .{ root.bit_string, root.val });
-    for (root.kids) |kid| {
-        std.debug.print("{} {s}\n", .{ kid.bit_string, kid.val });
-    }
-    var key: [3]u8 = "Zig".*;
+    var key: [4]u8 = "Zig_".*;
+    var val: [28]u8 = "hey, i just made a new triev".*;
+    const t = try root.get(key[0..]);
+    std.debug.print("\n", .{});
+    if (t.depth != key.len)
+        try t.insert(key[t.depth..], val[0..], a);
     _ = try root.get(key[0..]);
 
     var args = [_:null]?[*:0]const u8{ "echo", "yo", "dawg", "i heard" };
@@ -59,9 +64,9 @@ const Triev = struct {
         var cur = self;
         var i: u8 = 0;
         while (i < key.len) : (i += 1) {
-            std.debug.print("{s}\n", .{cur.val});
             if (cur.bit_string == 0)
                 break;
+            std.debug.print("{} {s}\n", .{ cur.depth, cur.val });
             const k = try compress_key(key[i]);
             std.debug.print("{s} {}\n", .{ "looking for", k });
             const bit_flag = @as(u32, 1) << k;
@@ -81,7 +86,35 @@ const Triev = struct {
                 break;
             }
         }
+        std.debug.print("{} {s}\n", .{ cur.depth, cur.val });
         return cur;
+    }
+
+    // create a Triev for each byte in key and assign val to last in line
+    // TODO: figure out how to union of TrievError or AllocatorError
+    fn insert(self: *Triev, key: []u8, val: []u8, a: *Allocator) TrievError!void {
+        if (key.len == 0) {
+            self.val = val;
+        } else {
+            const trievs = a.alloc(Triev, key.len) catch unreachable;
+            const pointers = a.alloc([1]*Triev, key.len) catch unreachable;
+            var i: u8 = 0;
+            const one: u32 = 1;
+            while (true) : (i += 1) {
+                pointers[i][0] = &trievs[i];
+                trievs[i].depth = self.depth + i + 1;
+                if (i == key.len - 1)
+                    break;
+                trievs[i].bit_string = one << try compress_key(key[i + 1]);
+                trievs[i].kids = pointers[i + 1][0..];
+                trievs[i].val = empty_str[0..];
+            }
+            self.bit_string = one << try compress_key(key[0]);
+            self.kids = pointers[0][0..];
+            trievs[i].bit_string = 0;
+            trievs[i].kids = empty_arr[0..];
+            trievs[i].val = val;
+        }
     }
 };
 
