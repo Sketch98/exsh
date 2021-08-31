@@ -1,20 +1,41 @@
 const std = @import("std");
+const allocator = std.mem.Allocator;
 
 pub fn main() anyerror!void {
+    var buf: [2048]u8 = undefined;
+    var a = &std.heap.FixedBufferAllocator.init(buf[0..]).allocator;
+    std.debug.print("{}\n", .{@sizeOf(Triev)});
+
     var empty_arr = [0]*Triev{};
-    var kid_msg: [25]u8 = "just some snot-nosed brat".*;
-    comptime var i = 0;
-    var kids: [32]*Triev = undefined;
-    inline while (i < kids.len) : (i += 1) {
-        kids[i] = &Triev{ .depth = 1, .bit_string = 0, .kids = empty_arr[0..], .val = kid_msg[0..] };
-    }
-    var grandkids: [1]*Triev = undefined;
-    var grandkid_msg: [16]u8 = "a wee little bab".*;
-    grandkids[0] = &Triev{ .depth = 2, .bit_string = 23, .kids = empty_arr[0..], .val = grandkid_msg[0..] };
-    kids[5].bit_string = 0x0000_0200;
-    kids[5].kids = grandkids[0..];
     var root_msg: [36]u8 = "all your permission are belong to us".*;
-    var root = Triev{ .depth = 0, .bit_string = 0xFFFFFFFF, .kids = kids[0..], .val = root_msg[0..] };
+    var kid_msg: [25]u8 = "just some snot-nosed brat".*;
+    var grandkid_msg: [16]u8 = "a wee little bab".*;
+
+    const root = try a.create(Triev);
+    root.depth = 0;
+    root.bit_string = 0xFFFF_FFFF;
+    root.kids = try a.alloc(*Triev, 32);
+    root.val = root_msg[0..];
+
+    const kids = try a.alloc(Triev, 32);
+    comptime var i = 0;
+    inline while (i < 32) : (i += 1) {
+        kids[i].depth = 1;
+        kids[i].bit_string = 0;
+        kids[i].kids = empty_arr[0..];
+        kids[i].val = kid_msg[0..];
+        root.kids[i] = &kids[i];
+    }
+
+    const grandkid = try a.create(Triev);
+    grandkid.depth = 2;
+    grandkid.bit_string = 0;
+    grandkid.kids = empty_arr[0..];
+    grandkid.val = grandkid_msg[0..];
+    kids[5].bit_string = 0x0000_0200;
+    kids[5].kids = try a.alloc(*Triev, 1);
+    kids[5].kids[0] = grandkid;
+
     std.debug.print("{} {s}\n", .{ root.bit_string, root.val });
     for (root.kids) |kid| {
         std.debug.print("{} {s}\n", .{ kid.bit_string, kid.val });
