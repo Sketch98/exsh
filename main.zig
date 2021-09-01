@@ -11,46 +11,18 @@ pub fn main() anyerror!void {
     std.debug.print("{}\n", .{@sizeOf(Triev)});
 
     var root_msg: [36]u8 = "all your permission are belong to us".*;
-    var kid_msg: [25]u8 = "just some snot-nosed brat".*;
-    var grandkid_msg: [16]u8 = "a wee little bab".*;
 
     const root = try a.create(Triev);
     root.depth = 0;
-    root.bit_string = 0xFFFF_FFFF;
-    root.kids = try a.alloc(*Triev, 32);
+    root.bit_string = 0;
+    root.kids = empty_arr[0..];
     root.val = root_msg[0..];
 
-    const kids = try a.alloc(Triev, 32);
-    comptime var i = 0;
-    inline while (i < 32) : (i += 1) {
-        kids[i].depth = 1;
-        kids[i].bit_string = 0;
-        kids[i].kids = empty_arr[0..];
-        kids[i].val = kid_msg[0..];
-        root.kids[i] = &kids[i];
-    }
-
-    const grandkid = try a.create(Triev);
-    grandkid.depth = 2;
-    grandkid.bit_string = 0;
-    grandkid.kids = empty_arr[0..];
-    grandkid.val = grandkid_msg[0..];
-    kids[26].bit_string = 0x0000_0200;
-    kids[26].kids = try a.alloc(*Triev, 1);
-    kids[26].kids[0] = grandkid;
-    std.debug.print("{}\n", .{b.end_index});
-
-    var key: [4]u8 = "Zig_".*;
-    var val: [28]u8 = "hey, i just made a new triev".*;
-    try root.easy_insert(key[0..], val[0..], a);
-    var key2: [6]u8 = "Zinger".*;
-    var val2: [20]u8 = "idk what to put here".*;
-    try root.easy_insert(key2[0..], val2[0..], a);
-    var key3: [6]u8 = "Ziffle".*;
-    var val3: [22]u8 = "copy and paste all day".*;
-    try root.easy_insert(key3[0..], val3[0..], a);
-    // try root.remove(key[0..]);
-    _ = try root.get(key[0..]);
+    try root.insert("Zig", "hey, i just made a new triev", a);
+    try root.insert("Zinger", "idk what to put here", a);
+    try root.insert("Ziffle", "copy and paste all day", a);
+    try root.walk(a);
+    try root.remove("Zinger");
     try root.walk(a);
     std.debug.print("\n{}\n\n", .{b.end_index});
 
@@ -72,44 +44,49 @@ const Triev = struct {
         while (i < key.len) : (i += 1) {
             if (cur.bit_string == 0)
                 break;
-            std.debug.print("{} {s}\n", .{ cur.depth, cur.val });
+            // std.debug.print("{} {s}\n", .{ cur.depth, cur.val });
             const k = try compress_key(key[i]);
-            std.debug.print("\t{s} {}\n", .{ "looking for", k });
+            // std.debug.print("\t{s} {}\n", .{ "looking for", k });
             const bit_flag = @as(u32, 1) << k;
             // assuming very sparse triev, only having one kid is most common
             // and i'm already computing bit_flag for the general case
             if (cur.bit_string == bit_flag) {
-                std.debug.print("\t{s}\n", .{"an only child"});
+                // std.debug.print("\t{s}\n", .{"an only child"});
                 cur = cur.kids[0];
             } else if (cur.bit_string & bit_flag != 0) {
-                std.debug.print("\t{s}\n", .{"it exists! now what?"});
+                // std.debug.print("\t{s}\n", .{"it exists! now what?"});
                 // find number of 1's in bit_string to the right of bit_flag
                 const index = hamming_weight((cur.bit_string & ~bit_flag) << 31 - k);
                 cur = cur.kids[index];
-                std.debug.print("\t{s} {}\n", .{ "HAMMMMMM", index });
+                // std.debug.print("\t{s} {}\n", .{ "HAMMMMMM", index });
             } else {
-                std.debug.print("\t{s}\n", .{"i don't see nothin'"});
+                // std.debug.print("\t{s}\n", .{"i don't see nothin'"});
                 break;
             }
         }
-        std.debug.print("{} {s}\n\n", .{ cur.depth, cur.val });
+        // std.debug.print("{} {s}\n\n", .{ cur.depth, cur.val });
         return cur;
     }
 
     // create a Triev for each byte in key and assign val to last in line
     fn insert(self: *Triev, key: []const u8, val: []const u8, a: *Allocator) !void {
-        if (key.len == 0) {
-            self.val = val;
+        const t = try self.get(key);
+        // i couldn't think of a good name to differentiate the key used for get
+        // and insert so ikey (i for insert) it is. the other option was to use
+        // key by calculating the correct index everytime, but that's annoying.
+        var ikey = key[t.depth..];
+        if (ikey.len == 0) {
+            t.val = val;
         } else {
-            const trievs = try a.alloc(Triev, key.len);
-            const pointers = try a.alloc([1]*Triev, key.len - 1);
+            const trievs = try a.alloc(Triev, ikey.len);
+            const pointers = try a.alloc([1]*Triev, ikey.len - 1);
             var i: u8 = 0;
             const one: u32 = 1;
             while (true) : (i += 1) {
-                trievs[i].depth = self.depth + i + 1;
-                if (i == key.len - 1)
+                trievs[i].depth = t.depth + i + 1;
+                if (i == ikey.len - 1)
                     break;
-                trievs[i].bit_string = one << try compress_key(key[i + 1]);
+                trievs[i].bit_string = one << try compress_key(ikey[i + 1]);
                 trievs[i].val = empty_str[0..];
                 trievs[i].kids = pointers[i][0..];
                 pointers[i][0] = &trievs[i + 1];
@@ -118,21 +95,21 @@ const Triev = struct {
             trievs[i].kids = empty_arr[0..];
             trievs[i].val = val;
 
-            if (self.bit_string == 0) {
+            if (t.bit_string == 0) {
                 const p = try a.create([1]*Triev);
                 p[0] = &trievs[0];
-                self.bit_string = one << try compress_key(key[0]);
-                self.kids = p;
+                t.bit_string = one << try compress_key(ikey[0]);
+                t.kids = p;
             } else {
-                const p = try a.alloc(*Triev, self.kids.len + 1);
-                const bit = try compress_key(key[0]);
+                const p = try a.alloc(*Triev, t.kids.len + 1);
+                const bit = try compress_key(ikey[0]);
                 const bit_flag = one << bit;
-                self.bit_string |= bit_flag;
-                const index = hamming_weight((self.bit_string & ~bit_flag) << 31 - bit);
-                std.mem.copy(*Triev, p[0..index], self.kids[0..index]);
+                t.bit_string |= bit_flag;
+                const index = hamming_weight((t.bit_string & ~bit_flag) << 31 - bit);
+                std.mem.copy(*Triev, p[0..index], t.kids[0..index]);
                 p[index] = &trievs[0];
-                std.mem.copy(*Triev, p[index + 1 ..], self.kids[index..]);
-                self.kids = p[0..];
+                std.mem.copy(*Triev, p[index + 1 ..], t.kids[index..]);
+                t.kids = p[0..];
             }
         }
     }
@@ -185,13 +162,6 @@ const Triev = struct {
             // reset values for new walk
             kid_index = 0;
         }
-    }
-
-    // walk toward key then insert val
-    fn easy_insert(self: *Triev, key: []const u8, val: []const u8, a: *Allocator) !void {
-        const t = try self.get(key);
-        if (t.depth != key.len)
-            try t.insert(key[t.depth..], val, a);
     }
 };
 
