@@ -64,9 +64,9 @@ const Triev = struct {
     depth: u8,
     bit_string: u32 = 0,
     kids: []*Triev,
-    val: []u8,
+    val: []const u8,
     // walk toward key and return pointer to furthest triev reached
-    fn get(self: *Triev, key: []u8) TrievError!*Triev {
+    fn get(self: *Triev, key: []const u8) TrievError!*Triev {
         var cur = self;
         var i: u8 = 0;
         while (i < key.len) : (i += 1) {
@@ -97,7 +97,7 @@ const Triev = struct {
     }
 
     // create a Triev for each byte in key and assign val to last in line
-    fn insert(self: *Triev, key: []u8, val: []u8, a: *Allocator) !void {
+    fn insert(self: *Triev, key: []const u8, val: []const u8, a: *Allocator) !void {
         if (key.len == 0) {
             self.val = val;
         } else {
@@ -138,7 +138,7 @@ const Triev = struct {
     }
 
     // set val of Triev at key to empty string slice if such a Triev exists
-    fn remove(self: *Triev, key: []u8) TrievError!void {
+    fn remove(self: *Triev, key: []const u8) TrievError!void {
         const t = try self.get(key);
         if (t.depth == key.len)
             t.val = empty_str[0..];
@@ -188,7 +188,7 @@ const Triev = struct {
     }
 
     // walk toward key then insert val
-    fn easy_insert(self: *Triev, key: []u8, val: []u8, a: *Allocator) !void {
+    fn easy_insert(self: *Triev, key: []const u8, val: []const u8, a: *Allocator) !void {
         const t = try self.get(key);
         if (t.depth != key.len)
             try t.insert(key[t.depth..], val, a);
