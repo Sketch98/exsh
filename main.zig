@@ -167,7 +167,6 @@ const Triev = struct {
 
 const TrievError = error{
     InvalidKeyByte, //key must only be made of A-Za-Z_
-    KeyTooLong,
 };
 
 // squishes A-Za-z_ ranging 0x41-0x7A (64 bits) into 0x01-0x1F (32 bits)
