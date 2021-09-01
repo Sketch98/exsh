@@ -43,6 +43,12 @@ pub fn main() anyerror!void {
     var key: [4]u8 = "Zig_".*;
     var val: [28]u8 = "hey, i just made a new triev".*;
     try root.easy_insert(key[0..], val[0..], a);
+    var key2: [6]u8 = "Zinger".*;
+    var val2: [20]u8 = "idk what to put here".*;
+    try root.easy_insert(key2[0..], val2[0..], a);
+    var key3: [6]u8 = "Ziffle".*;
+    var val3: [22]u8 = "copy and paste all day".*;
+    try root.easy_insert(key3[0..], val3[0..], a);
     // try root.remove(key[0..]);
     _ = try root.get(key[0..]);
     try root.walk(a);
@@ -96,23 +102,38 @@ const Triev = struct {
             self.val = val;
         } else {
             const trievs = try a.alloc(Triev, key.len);
-            const pointers = try a.alloc([1]*Triev, key.len);
+            const pointers = try a.alloc([1]*Triev, key.len - 1);
             var i: u8 = 0;
             const one: u32 = 1;
             while (true) : (i += 1) {
-                pointers[i][0] = &trievs[i];
                 trievs[i].depth = self.depth + i + 1;
                 if (i == key.len - 1)
                     break;
                 trievs[i].bit_string = one << try compress_key(key[i + 1]);
-                trievs[i].kids = pointers[i + 1][0..];
                 trievs[i].val = empty_str[0..];
+                trievs[i].kids = pointers[i][0..];
+                pointers[i][0] = &trievs[i + 1];
             }
-            self.bit_string = one << try compress_key(key[0]);
-            self.kids = pointers[0][0..];
             trievs[i].bit_string = 0;
             trievs[i].kids = empty_arr[0..];
             trievs[i].val = val;
+
+            if (self.bit_string == 0) {
+                const p = try a.create([1]*Triev);
+                p[0] = &trievs[0];
+                self.bit_string = one << try compress_key(key[0]);
+                self.kids = p;
+            } else {
+                const p = try a.alloc(*Triev, self.kids.len + 1);
+                const bit = try compress_key(key[0]);
+                const bit_flag = one << bit;
+                self.bit_string |= bit_flag;
+                const index = hamming_weight((self.bit_string & ~bit_flag) << 31 - bit);
+                std.mem.copy(*Triev, p[0..index], self.kids[0..index]);
+                p[index] = &trievs[0];
+                std.mem.copy(*Triev, p[index + 1 ..], self.kids[index..]);
+                self.kids = p[0..];
+            }
         }
     }
 
