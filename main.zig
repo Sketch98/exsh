@@ -35,9 +35,9 @@ pub fn main() anyerror!void {
     grandkid.bit_string = 0;
     grandkid.kids = empty_arr[0..];
     grandkid.val = grandkid_msg[0..];
-    kids[5].bit_string = 0x0000_0200;
-    kids[5].kids = try a.alloc(*Triev, 1);
-    kids[5].kids[0] = grandkid;
+    kids[26].bit_string = 0x0000_0200;
+    kids[26].kids = try a.alloc(*Triev, 1);
+    kids[26].kids[0] = grandkid;
     std.debug.print("{}\n", .{b.end_index});
 
     var key: [4]u8 = "Zig_".*;
@@ -79,9 +79,9 @@ const Triev = struct {
                 std.debug.print("{s}\n", .{"an only child"});
                 cur = cur.kids[0];
             } else if (cur.bit_string & bit_flag != 0) {
-                std.debug.print("{s}\n", .{"it exists! now what?"});
-                // -1 because we want array index which is 0-based
-                const index = hamming_weight(cur.bit_string >> k) - 1;
+                std.debug.print("\t{s}\n", .{"it exists! now what?"});
+                // find number of 1's in bit_string to the right of bit_flag
+                const index = hamming_weight((cur.bit_string & ~bit_flag) << 31 - k);
                 cur = cur.kids[index];
                 std.debug.print("{s} {}\n", .{ "HAMMMMMM", index });
             } else {
@@ -94,13 +94,12 @@ const Triev = struct {
     }
 
     // create a Triev for each byte in key and assign val to last in line
-    // TODO: figure out how to union of TrievError or AllocatorError
-    fn insert(self: *Triev, key: []u8, val: []u8, a: *Allocator) TrievError!void {
+    fn insert(self: *Triev, key: []u8, val: []u8, a: *Allocator) !void {
         if (key.len == 0) {
             self.val = val;
         } else {
-            const trievs = a.alloc(Triev, key.len) catch unreachable;
-            const pointers = a.alloc([1]*Triev, key.len) catch unreachable;
+            const trievs = try a.alloc(Triev, key.len);
+            const pointers = try a.alloc([1]*Triev, key.len);
             var i: u8 = 0;
             const one: u32 = 1;
             while (true) : (i += 1) {
