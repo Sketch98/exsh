@@ -5,7 +5,7 @@ var empty_arr = [0]*Triev{};
 var empty_str = [0]u8{};
 
 pub fn main() anyerror!void {
-    var buf: [2048]u8 = undefined;
+    var buf: [4096]u8 = undefined;
     var b = std.heap.FixedBufferAllocator.init(buf[0..]);
     var a = &b.allocator;
     std.debug.print("{}\n", .{@sizeOf(Triev)});
@@ -43,13 +43,12 @@ pub fn main() anyerror!void {
     var key: [4]u8 = "Zig_".*;
     var val: [28]u8 = "hey, i just made a new triev".*;
     const t = try root.get(key[0..]);
-    std.debug.print("\n", .{});
     if (t.depth != key.len)
         try t.insert(key[t.depth..], val[0..], a);
-    try root.remove(key[0..]);
-    std.debug.print("\n", .{});
+    // try root.remove(key[0..]);
     _ = try root.get(key[0..]);
-    std.debug.print("\n", .{});
+    try root.walk(a);
+    std.debug.print("\n{}\n\n", .{b.end_index});
 
     var args = [_:null]?[*:0]const u8{ "echo", "yo", "dawg", "i heard" };
     //const envp = [0:null]?[*:0]const u8{};
@@ -71,25 +70,25 @@ const Triev = struct {
                 break;
             std.debug.print("{} {s}\n", .{ cur.depth, cur.val });
             const k = try compress_key(key[i]);
-            std.debug.print("{s} {}\n", .{ "looking for", k });
+            std.debug.print("\t{s} {}\n", .{ "looking for", k });
             const bit_flag = @as(u32, 1) << k;
             // assuming very sparse triev, only having one kid is most common
             // and i'm already computing bit_flag for the general case
             if (cur.bit_string == bit_flag) {
-                std.debug.print("{s}\n", .{"an only child"});
+                std.debug.print("\t{s}\n", .{"an only child"});
                 cur = cur.kids[0];
             } else if (cur.bit_string & bit_flag != 0) {
                 std.debug.print("\t{s}\n", .{"it exists! now what?"});
                 // find number of 1's in bit_string to the right of bit_flag
                 const index = hamming_weight((cur.bit_string & ~bit_flag) << 31 - k);
                 cur = cur.kids[index];
-                std.debug.print("{s} {}\n", .{ "HAMMMMMM", index });
+                std.debug.print("\t{s} {}\n", .{ "HAMMMMMM", index });
             } else {
-                std.debug.print("{s}\n", .{"i don't see nothin'"});
+                std.debug.print("\t{s}\n", .{"i don't see nothin'"});
                 break;
             }
         }
-        std.debug.print("{} {s}\n", .{ cur.depth, cur.val });
+        std.debug.print("{} {s}\n\n", .{ cur.depth, cur.val });
         return cur;
     }
 
@@ -125,6 +124,49 @@ const Triev = struct {
         if (t.depth == key.len)
             t.val = empty_str[0..];
     }
+
+    // this only prints out contents of Triev with debug prints
+    // maybe later i'll make it return a list of key-value pairs
+    fn walk(self: *Triev, a: *Allocator) !void {
+        const StackItem = struct { t: *Triev, kid_index: u5, bit_shift: u5 };
+        var cur = self;
+        var stack = std.ArrayList(*StackItem).init(a);
+        defer stack.deinit();
+        var kid_index: u5 = 0;
+        var bit_shift: u5 = 0;
+        while (true) {
+            if (cur.val.len != 0) {
+                std.debug.print("key ", .{});
+                for (stack.items) |item| std.debug.print("{c}", .{@intCast(u8, item.bit_shift) | 0x40});
+                std.debug.print("\n\tval {s}\n", .{cur.val});
+            }
+            if (cur.kids.len == 0) {
+                // pop stack until i reach an item with kids left to walk
+                while (true) {
+                    if (stack.items.len == 0)
+                        return;
+                    const item = stack.pop();
+                    // popped Triev has no more kids to walk
+                    if (item.kid_index == item.t.kids.len - 1)
+                        continue;
+                    cur = item.t;
+                    kid_index = item.kid_index + 1;
+                    bit_shift = next_bit(cur.bit_string, item.bit_shift + 1);
+                    break;
+                }
+            } else {
+                bit_shift = next_bit(cur.bit_string, 0);
+            }
+            var item = try a.create(StackItem);
+            item.t = cur;
+            item.kid_index = kid_index;
+            item.bit_shift = bit_shift;
+            try stack.append(item);
+            cur = cur.kids[kid_index];
+            // reset values for new walk
+            kid_index = 0;
+        }
+    }
 };
 
 const TrievError = error{
@@ -139,6 +181,8 @@ fn compress_key(key: u8) TrievError!u5 {
     return TrievError.InvalidKeyByte;
 }
 
+// get number of 1's in bit string
+// can return u5 because input is guaranteed to not be 0xFFFF_FFFFF
 // if only i could just use the x86 instruction but alas
 fn hamming_weight(bit_string: u32) u5 {
     var bits = bit_string;
@@ -147,6 +191,17 @@ fn hamming_weight(bit_string: u32) u5 {
     bits = (bits + (bits >> 4)) & 0x0f0f0f0f;
     bits *%= 0x01010101;
     return @intCast(u5, bits >> 24);
+}
+
+// find the first bit from the right that's 1 (with pre-shift)
+fn next_bit(bit_string: u32, bit_shift: u5) u5 {
+    var bits = bit_string >> bit_shift;
+    var shift = bit_shift;
+    while (bits & 1 == 0) {
+        bits >>= 1;
+        shift += 1;
+    }
+    return shift;
 }
 
 const expect = std.testing.expect;
