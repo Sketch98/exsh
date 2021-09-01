@@ -42,9 +42,7 @@ pub fn main() anyerror!void {
 
     var key: [4]u8 = "Zig_".*;
     var val: [28]u8 = "hey, i just made a new triev".*;
-    const t = try root.get(key[0..]);
-    if (t.depth != key.len)
-        try t.insert(key[t.depth..], val[0..], a);
+    try root.easy_insert(key[0..], val[0..], a);
     // try root.remove(key[0..]);
     _ = try root.get(key[0..]);
     try root.walk(a);
@@ -166,6 +164,13 @@ const Triev = struct {
             // reset values for new walk
             kid_index = 0;
         }
+    }
+
+    // walk toward key then insert val
+    fn easy_insert(self: *Triev, key: []u8, val: []u8, a: *Allocator) !void {
+        const t = try self.get(key);
+        if (t.depth != key.len)
+            try t.insert(key[t.depth..], val, a);
     }
 };
 
