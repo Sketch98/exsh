@@ -5,7 +5,7 @@ var empty_arr = [0]*Triev{};
 var empty_str = [0]u8{};
 
 pub fn main() anyerror!void {
-    var buf: [4096]u8 = undefined;
+    var buf: [16700000]u8 = undefined;
     var b = std.heap.FixedBufferAllocator.init(buf[0..]);
     var a = &b.allocator;
     std.debug.print("{}\n", .{@sizeOf(Triev)});
@@ -13,7 +13,6 @@ pub fn main() anyerror!void {
     var root_msg: [36]u8 = "all your permission are belong to us".*;
 
     const root = try a.create(Triev);
-    root.depth = 0;
     root.bit_string = 0;
     root.kids = empty_arr[0..];
     root.val = root_msg[0..];
@@ -21,6 +20,8 @@ pub fn main() anyerror!void {
     try root.insert("Zig", "hey, i just made a new triev", a);
     try root.insert("Zinger", "idk what to put here", a);
     try root.insert("Ziffle", "copy and paste all day", a);
+    // uncommend if you dare
+    // try root.insert("z" ** 100_000, "so tired", a);
     try root.walk(a);
     try root.remove("Zinger");
     try root.walk(a);
@@ -31,22 +32,25 @@ pub fn main() anyerror!void {
     return std.os.execvpeZ(args[0].?, &args, &[0:null]?[*:0]const u8{});
 }
 
+// root depth is 0, and each child is +1
+// zig really needs multiple return values
+const GetReturn = struct { t: *Triev, depth: u64 };
+
 // triev as in retrieval. much better alternative to the ambiguous trie imo.
 const Triev = struct {
-    depth: u8,
     bit_string: u32 = 0,
     kids: []*Triev,
     val: []const u8,
     // walk toward key and return pointer to furthest triev reached
-    fn get(self: *Triev, key: []const u8) TrievError!*Triev {
+    fn get(self: *Triev, key: []const u8) TrievError!GetReturn {
         if (!is_valid_key(key))
             return TrievError.InvalidKey;
         var cur = self;
-        var i: u8 = 0;
+        var i: u64 = 0;
         while (i < key.len) : (i += 1) {
             if (cur.bit_string == 0)
                 break;
-            // std.debug.print("{} {s}\n", .{ cur.depth, cur.val });
+            // std.debug.print("{s}\n", .{ cur.val });
             const k = @intCast(u5, key[i] & 0x1F);
             // std.debug.print("\t{s} {}\n", .{ "looking for", k });
             const bit_flag = @as(u32, 1) << k;
@@ -66,26 +70,26 @@ const Triev = struct {
                 break;
             }
         }
-        // std.debug.print("{} {s}\n\n", .{ cur.depth, cur.val });
-        return cur;
+        // std.debug.print("{s}\n\n", .{ cur.val });
+        return GetReturn{ .t=cur, .depth=i };
     }
 
     // create a Triev for each byte in key and assign val to last in line
     fn insert(self: *Triev, key: []const u8, val: []const u8, a: *Allocator) !void {
-        const t = try self.get(key);
+        const getReturn = try self.get(key);
+        const t = getReturn.t;
         // i couldn't think of a good name to differentiate the key used for get
         // and insert so ikey (i for insert) it is. the other option was to use
         // key by calculating the correct index everytime, but that's annoying.
-        var ikey = key[t.depth..];
+        const ikey = key[getReturn.depth..];
         if (ikey.len == 0) {
             t.val = val;
         } else {
             const trievs = try a.alloc(Triev, ikey.len);
             const pointers = try a.alloc([1]*Triev, ikey.len - 1);
-            var i: u8 = 0;
+            var i: u64 = 0;
             const one: u32 = 1;
             while (true) : (i += 1) {
-                trievs[i].depth = t.depth + i + 1;
                 if (i == ikey.len - 1)
                     break;
                 trievs[i].bit_string = one << @intCast(u5, ikey[i + 1] & 0x1F);
@@ -106,8 +110,10 @@ const Triev = struct {
                 const p = try a.alloc(*Triev, t.kids.len + 1);
                 const bit_pos = @intCast(u5, ikey[0] & 0x1F);
                 const bit_flag = one << bit_pos;
+                // dont need bit_string & ~bit_flag, like in get, because insertion means
+                // the bit at bit_pos is 0
+                const index = hamming_weight(t.bit_string << 31 - bit_pos);
                 t.bit_string |= bit_flag;
-                const index = hamming_weight((t.bit_string & ~bit_flag) << 31 - bit_pos);
                 std.mem.copy(*Triev, p[0..index], t.kids[0..index]);
                 p[index] = &trievs[0];
                 std.mem.copy(*Triev, p[index + 1 ..], t.kids[index..]);
@@ -118,9 +124,9 @@ const Triev = struct {
 
     // set val of Triev at key to empty string slice if such a Triev exists
     fn remove(self: *Triev, key: []const u8) TrievError!void {
-        const t = try self.get(key);
-        if (t.depth == key.len)
-            t.val = empty_str[0..];
+        const getReturn = try self.get(key);
+        if (getReturn.depth == key.len)
+            getReturn.t.val = empty_str[0..];
     }
 
     // this only prints out contents of Triev with debug prints
