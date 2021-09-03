@@ -5,7 +5,7 @@ var empty_arr = [0]*Triev{};
 var empty_str = [0]u8{};
 
 pub fn main() anyerror!void {
-    var buf: [16700000]u8 = undefined;
+    var buf: [16_700_000]u8 = undefined;
     var b = std.heap.FixedBufferAllocator.init(buf[0..]);
     var a = &b.allocator;
     std.debug.print("{}\n", .{@sizeOf(Triev)});
@@ -21,7 +21,7 @@ pub fn main() anyerror!void {
     try root.insert("Zinger", "idk what to put here", a);
     try root.insert("Ziffle", "copy and paste all day", a);
     // uncommend if you dare
-    // try root.insert("z" ** 100_000, "so tired", a);
+    // try root.insert("z" ** 250_000, "so tired", a);
     try root.walk(a);
     try root.remove("Zinger");
     try root.walk(a);
@@ -134,7 +134,7 @@ const Triev = struct {
     fn walk(self: *Triev, a: *Allocator) !void {
         const StackItem = struct { t: *Triev, kid_index: u5, bit_shift: u5 };
         var cur = self;
-        var stack = std.ArrayList(*StackItem).init(a);
+        var stack = std.ArrayList(StackItem).init(a);
         defer stack.deinit();
         var kid_index: u5 = 0;
         var bit_shift: u5 = 0;
@@ -163,11 +163,10 @@ const Triev = struct {
             } else {
                 bit_shift = next_bit(cur.bit_string, 0);
             }
-            var item = try a.create(StackItem);
+            var item = try stack.addOne();
             item.t = cur;
             item.kid_index = kid_index;
             item.bit_shift = bit_shift;
-            try stack.append(item);
             cur = cur.kids[kid_index];
             // reset values for new walk
             kid_index = 0;
