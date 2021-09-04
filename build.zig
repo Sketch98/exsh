@@ -12,6 +12,7 @@ pub fn build(b: *std.build.Builder) void {
     const mode = b.standardReleaseOptions();
 
     const exe = b.addExecutable("exsh", "main.zig");
+    exe.addPackagePath("triev", "triev.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.setOutputDir(".");
