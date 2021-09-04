@@ -1,8 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-var empty_arr = [0]*Triev{};
-var empty_str = [0]u8{};
+const empty_arr = [0]*Triev{};
+const empty_str = [0]u8{};
 
 pub fn main() anyerror!void {
     var buf: [16_700_000]u8 = undefined;
@@ -12,14 +12,16 @@ pub fn main() anyerror!void {
 
     var root_msg: [36]u8 = "all your permission are belong to us".*;
 
-    const root = try a.create(Triev);
-    root.bit_string = 0;
-    root.kids = empty_arr[0..];
-    root.val = root_msg[0..];
+    const root = try a.create(TrievManager);
+    root.t.bit_string = 0;
+    root.t.kids = empty_arr[0..];
+    root.t.val = root_msg[0..];
+    root.depth = 0;
+    root.num_vals = 0;
 
     try root.insert("Zig", "hey, i just made a new triev", a);
     try root.insert("Zinger", "idk what to put here", a);
-    try root.insert("Ziffle", "copy and paste all day", a);
+    try root.insert("Zif_fle", "copy and paste all day", a);
     // uncommend if you dare
     // try root.insert("z" ** 250_000, "so tired", a);
     try root.walk(a);
@@ -31,6 +33,80 @@ pub fn main() anyerror!void {
     //const envp = [0:null]?[*:0]const u8{};
     return std.os.execvpeZ(args[0].?, &args, &[0:null]?[*:0]const u8{});
 }
+
+// a wrapper for Triev that keeps track of metadata so i can more efficiently walk the triev.
+// no wraper for Triev.get because it doesn't generate metadata. use TrievManager.t.get instead.
+const TrievManager = struct {
+    t: Triev,
+    depth: u64,
+    num_vals: u64,
+    fn insert(self: *TrievManager, key: []const u8, val: []const u8, a: *Allocator) !void {
+        const keylen = key.len;
+        if (keylen > self.depth)
+            self.depth = keylen;
+        if (try self.t.insert(key, val, a))
+            self.num_vals += 1;
+    }
+    fn remove(self: *TrievManager, key: []const u8) TrievError!void {
+        if (try self.t.remove(key))
+            self.num_vals -= 1;
+    }
+
+    // this only prints out contents of Triev with debug prints.
+    // maybe later i'll make it return a list of key-value pairs.
+    fn walk(self: *TrievManager, a: *Allocator) !void {
+        // TrievManager's metadata allows us to allocate stacks with the exact size needed.
+        const triev_stack = try a.alloc(*Triev, self.depth);
+        defer a.free(triev_stack);
+        const kid_index_stack = try a.alloc(u5, self.depth);
+        defer a.free(kid_index_stack);
+        const bit_shift_stack = try a.alloc(u5, self.depth);
+        defer a.free(bit_shift_stack);
+        var stack_index: u64 = 0;
+        var cur = &self.t;
+        // selects which branch of triev to walk
+        var kid_index: u5 = 0;
+        // tracks which bit in cur's bit string corresponds to the current branch.
+        // i use this to recalculate each triev's key.
+        var bit_shift: u5 = 0;
+        while (true) {
+            if (cur.val.len != 0) {
+                std.debug.print("key ", .{});
+                // | 0x40 to unsquish key. i'd prefer to print in lowercase
+                // but i really can't be bothered to write more than an or.
+                var i: u64 = 0;
+                while (i < stack_index): (i += 1)
+                    std.debug.print("{c}", .{@intCast(u8, bit_shift_stack[i]) | 0x40});
+                std.debug.print("\n\tval {s}\n", .{cur.val});
+            }
+            if (cur.kids.len == 0) {
+                // pop stack until i reach an item with kids left to walk
+                while (true) {
+                    if (stack_index == 0)
+                        return;
+                    stack_index -= 1;
+                    cur = triev_stack[stack_index];
+                    kid_index = kid_index_stack[stack_index] + 1;
+                    // popped triev has no more kids to walk
+                    if (kid_index == cur.kids.len)
+                        continue;
+                    bit_shift = next_bit(cur.bit_string, bit_shift_stack[stack_index] + 1);
+                    break;
+                }
+            } else {
+                bit_shift = next_bit(cur.bit_string, 0);
+            }
+            // store current triev before switching to kid
+            triev_stack[stack_index] = cur;
+            kid_index_stack[stack_index] = kid_index;
+            bit_shift_stack[stack_index] = bit_shift;
+            stack_index += 1;
+            cur = cur.kids[kid_index];
+            // reset values for new walk
+            kid_index = 0;
+        }
+    }
+};
 
 // root depth is 0, and each child is +1
 // zig really needs multiple return values
@@ -75,7 +151,8 @@ const Triev = struct {
     }
 
     // create a Triev for each byte in key and assign val to last in line
-    fn insert(self: *Triev, key: []const u8, val: []const u8, a: *Allocator) !void {
+    // return value is true if new val was added to triev, false if old value was replaced
+    fn insert(self: *Triev, key: []const u8, val: []const u8, a: *Allocator) !bool {
         const getReturn = try self.get(key);
         const t = getReturn.t;
         // i couldn't think of a good name to differentiate the key used for get
@@ -83,94 +160,59 @@ const Triev = struct {
         // key by calculating the correct index everytime, but that's annoying.
         const ikey = key[getReturn.depth..];
         if (ikey.len == 0) {
+            // return false when replacing non-empty value
+            var ret = false;
+            if (t.val.len == 0)
+                ret = true;
             t.val = val;
-        } else {
-            const trievs = try a.alloc(Triev, ikey.len);
-            const pointers = try a.alloc([1]*Triev, ikey.len - 1);
-            var i: u64 = 0;
-            const one: u32 = 1;
-            while (true) : (i += 1) {
-                if (i == ikey.len - 1)
-                    break;
-                trievs[i].bit_string = one << @intCast(u5, ikey[i + 1] & 0x1F);
-                trievs[i].val = empty_str[0..];
-                trievs[i].kids = pointers[i][0..];
-                pointers[i][0] = &trievs[i + 1];
-            }
-            trievs[i].bit_string = 0;
-            trievs[i].kids = empty_arr[0..];
-            trievs[i].val = val;
-
-            if (t.bit_string == 0) {
-                const p = try a.create([1]*Triev);
-                p[0] = &trievs[0];
-                t.bit_string = one << @intCast(u5, ikey[0] & 0x1F);
-                t.kids = p;
-            } else {
-                const p = try a.alloc(*Triev, t.kids.len + 1);
-                const bit_pos = @intCast(u5, ikey[0] & 0x1F);
-                const bit_flag = one << bit_pos;
-                // dont need bit_string & ~bit_flag, like in get, because insertion means
-                // the bit at bit_pos is 0
-                const index = hamming_weight(t.bit_string << 31 - bit_pos);
-                t.bit_string |= bit_flag;
-                std.mem.copy(*Triev, p[0..index], t.kids[0..index]);
-                p[index] = &trievs[0];
-                std.mem.copy(*Triev, p[index + 1 ..], t.kids[index..]);
-                t.kids = p[0..];
-            }
+            return ret;
         }
+        const trievs = try a.alloc(Triev, ikey.len);
+        const pointers = try a.alloc([1]*Triev, ikey.len - 1);
+        var i: u64 = 0;
+        const one: u32 = 1;
+        while (true) : (i += 1) {
+            if (i == ikey.len - 1)
+                break;
+            trievs[i].bit_string = one << @intCast(u5, ikey[i + 1] & 0x1F);
+            trievs[i].val = empty_str[0..];
+            trievs[i].kids = pointers[i][0..];
+            pointers[i][0] = &trievs[i + 1];
+        }
+        trievs[i].bit_string = 0;
+        trievs[i].kids = empty_arr[0..];
+        trievs[i].val = val;
+
+        if (t.bit_string == 0) {
+            const p = try a.create([1]*Triev);
+            p[0] = &trievs[0];
+            t.bit_string = one << @intCast(u5, ikey[0] & 0x1F);
+            t.kids = p;
+        } else {
+            const p = try a.alloc(*Triev, t.kids.len + 1);
+            const bit_pos = @intCast(u5, ikey[0] & 0x1F);
+            const bit_flag = one << bit_pos;
+            // dont need bit_string & ~bit_flag, like in get, because insertion means
+            // the bit at bit_pos is 0
+            const index = hamming_weight(t.bit_string << 31 - bit_pos);
+            t.bit_string |= bit_flag;
+            std.mem.copy(*Triev, p[0..index], t.kids[0..index]);
+            p[index] = &trievs[0];
+            std.mem.copy(*Triev, p[index + 1 ..], t.kids[index..]);
+            t.kids = p[0..];
+        }
+        return true;
     }
 
     // set val of Triev at key to empty string slice if such a Triev exists
-    fn remove(self: *Triev, key: []const u8) TrievError!void {
+    // return true if a value was removed
+    fn remove(self: *Triev, key: []const u8) TrievError!bool {
         const getReturn = try self.get(key);
-        if (getReturn.depth == key.len)
+        if (getReturn.depth == key.len) {
             getReturn.t.val = empty_str[0..];
-    }
-
-    // this only prints out contents of Triev with debug prints
-    // maybe later i'll make it return a list of key-value pairs
-    fn walk(self: *Triev, a: *Allocator) !void {
-        const StackItem = struct { t: *Triev, kid_index: u5, bit_shift: u5 };
-        var cur = self;
-        var stack = std.ArrayList(StackItem).init(a);
-        defer stack.deinit();
-        var kid_index: u5 = 0;
-        var bit_shift: u5 = 0;
-        while (true) {
-            if (cur.val.len != 0) {
-                std.debug.print("key ", .{});
-                // | 0x40 to unsquish key. i'd prefer to print in lowercase
-                // but i really can't be bothered to write more than an or.
-                for (stack.items) |item| std.debug.print("{c}", .{@intCast(u8, item.bit_shift) | 0x40});
-                std.debug.print("\n\tval {s}\n", .{cur.val});
-            }
-            if (cur.kids.len == 0) {
-                // pop stack until i reach an item with kids left to walk
-                while (true) {
-                    if (stack.items.len == 0)
-                        return;
-                    const item = stack.pop();
-                    // popped Triev has no more kids to walk
-                    if (item.kid_index == item.t.kids.len - 1)
-                        continue;
-                    cur = item.t;
-                    kid_index = item.kid_index + 1;
-                    bit_shift = next_bit(cur.bit_string, item.bit_shift + 1);
-                    break;
-                }
-            } else {
-                bit_shift = next_bit(cur.bit_string, 0);
-            }
-            var item = try stack.addOne();
-            item.t = cur;
-            item.kid_index = kid_index;
-            item.bit_shift = bit_shift;
-            cur = cur.kids[kid_index];
-            // reset values for new walk
-            kid_index = 0;
+            return true;
         }
+        return false;
     }
 };
 
